@@ -1,4 +1,4 @@
 runpod==1.6.2
 ultralytics==8.3.0
-requests
+huggingface_hub
 opencv-python-headless
