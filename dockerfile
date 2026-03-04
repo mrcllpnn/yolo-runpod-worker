@@ -1,20 +1,21 @@
-# Use a valid recent RunPod PyTorch base image
-# Recommended: one of the existing tags like 2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04 (or check Docker Hub for latest)
-FROM runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04
+# Recommended base: Latest RunPod PyTorch with high versions (PyTorch 2.9.1 + CUDA 12.9)
+FROM runpod/pytorch:1.0.3-cu1290-torch291-ubuntu2204
 
 WORKDIR /workspace
 
-# Install additional packages needed for your YOLO setup
+# Install required Python packages (runpod serverless + ultralytics + huggingface_hub)
+# Torch is already in the base image, but ensure compatibility
 RUN pip install --no-cache-dir \
     runpod \
     ultralytics \
-    huggingface_hub \
-    torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124  # match your CUDA if needed
+    huggingface_hub
 
-# Copy your handler code
+# Copy your handler code (make sure handler.py is in the same directory as this Dockerfile)
 COPY handler.py /workspace/handler.py
 
-# Optional: if you want to pre-download the model during build (faster cold starts, but increases image size)
+# Optional: Pre-download the model during build for faster cold starts
+# (increases image size by ~ a few hundred MB, but worth it for serverless)
 # RUN python -c "from huggingface_hub import hf_hub_download; hf_hub_download(repo_id='macpaw-research/yolov11l-ui-elements-detection', filename='ui-elements-detection.pt')"
 
+# Run the RunPod serverless handler
 CMD ["python", "-u", "/workspace/handler.py"]
