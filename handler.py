@@ -1,60 +1,55 @@
-import os
-import base64
-import cv2
-import numpy as np
 import runpod
-from ultralytics import YOLO
 from huggingface_hub import hf_hub_download
+from ultralytics import YOLO
+import torch
 
-# 1. Force YOLO to use a writable directory for internal settings
-os.environ['ULTRALYTICS_CONFIG_DIR'] = '/tmp/ultralytics'
+# Global model (loaded once at cold start for speed)
+model = None
 
-# 2. PROPER HUGGING FACE DOWNLOAD
-# This downloads the actual file and returns the local path string
-print("Downloading model from Hugging Face...")
-try:
-    model_path = hf_hub_download(
-        repo_id="macpaw-research/yolov11l-ui-elements-detection", 
-        filename="model.pt"
-    )
-    # 3. Load the model from the local path
-    model = YOLO(model_path)
-    print(f"Model loaded successfully from {model_path}")
-except Exception as e:
-    print(f"Error loading model: {e}")
-    raise e
+def load_model():
+    global model
+    if model is None:
+        print("Downloading model from HF...")
+        model_path = hf_hub_download(
+            repo_id="macpaw-research/yolov11l-ui-elements-detection",
+            filename="ui-elements-detection.pt",  # ← THIS is the fix!
+            cache_dir="/workspace/cache"  # optional, helps with persistence if using network volume
+        )
+        model = YOLO(model_path)
+        print("Model loaded successfully.")
+    return model
 
 def handler(job):
-    try:
-        job_input = job.get("input", {})
-        base64_image = job_input.get("image")
-        
-        if not base64_image:
-            return {"error": "No image provided"}
+    job_input = job['input']
+    
+    # Expecting base64 image or URL in input — adapt as needed
+    # Example: image_path = job_input.get('image')  # could be path, URL, or base64
+    
+    # For demo, assume you pass {"image": "https://example.com/screenshot.png"}
+    source = job_input.get('image')
+    
+    if not source:
+        return {"error": "No 'image' provided in input."}
+    
+    model = load_model()
+    
+    # Run inference
+    results = model.predict(source, conf=0.25, iou=0.45, imgsz=640)  # tune thresholds as needed
+    
+    # Format output (adapt to what you need: boxes, classes, etc.)
+    detections = []
+    for result in results:
+        for box in result.boxes:
+            detections.append({
+                "class": result.names[int(box.cls)],
+                "confidence": float(box.conf),
+                "bbox": box.xyxy.tolist()[0]  # [x1,y1,x2,y2]
+            })
+    
+    return {
+        "detections": detections,
+        "num_detections": len(detections)
+    }
 
-        # Decode Image
-        image_data = base64.b64decode(base64_image)
-        nparr = np.frombuffer(image_data, np.uint8)
-        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        
-        if img is None:
-            return {"error": "Invalid image format"}
-
-        # Run Inference
-        results = model.predict(img, conf=0.25)
-        
-        detections = []
-        for r in results:
-            for box in r.boxes:
-                detections.append({
-                    "class": model.names[int(box.cls)],
-                    "confidence": round(float(box.conf), 3),
-                    "bbox": [round(float(x), 1) for x in box.xyxy.tolist()[0]]
-                })
-        
-        return {"detections": detections}
-
-    except Exception as e:
-        return {"error": str(e)}
-
-runpod.serverless.start({"handler": handler})
+if __name__ == "__main__":
+    runpod.serverless.start({"handler": handler})
