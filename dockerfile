@@ -1,9 +1,12 @@
-FROM runpod/pytorch:1.0.3-cu1290-torch290-ubuntu2204
+FROM ultralytics/ultralytics:latest
 
-WORKDIR /workspace
+WORKDIR /app
 
-RUN pip install --no-cache-dir runpod ultralytics huggingface-hub pillow requests
+# Install serverless runtime + huggingface downloader
+RUN pip install --no-cache-dir runpod huggingface-hub
 
+# Copy handler
 COPY handler.py .
 
+# Run the serverless worker
 CMD ["python", "-u", "handler.py"]
