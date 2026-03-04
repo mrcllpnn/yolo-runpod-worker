@@ -11,49 +11,68 @@ model = None
 def load_model():
     global model
     if model is None:
-        print("Loading model...")
+        print("Downloading macpaw-research/yolov11l-ui-elements-detection ...")
         model_path = hf_hub_download(
             repo_id="macpaw-research/yolov11l-ui-elements-detection",
-            filename="ui-elements-detection.pt"  # This is the only change needed
+            filename="ui-elements-detection.pt"
         )
+        print(f"Model downloaded to: {model_path}")
         model = YOLO(model_path)
-        print("Model ready.")
+        print("YOLO model loaded successfully")
     return model
 
 def handler(job):
-    input_data = job['input']
-    image_src = input_data.get('image')
+    try:
+        job_input = job["input"]
+        image_input = job_input.get("image")
 
-    if not image_src:
-        return {"error": "Missing 'image' in input (URL, base64, or path)"}
+        if not image_input:
+            return {"error": "Missing 'image' key in input. Provide a URL or base64 string."}
 
-    # Load image
-    if image_src.startswith(('http://', 'https://')):
-        r = requests.get(image_src)
-        r.raise_for_status()
-        img_bytes = r.content
-    elif image_src.startswith('data:'):
-        _, b64 = image_src.split(',', 1)
-        img_bytes = base64.b64decode(b64)
-    else:
-        with open(image_src, 'rb') as f:
-            img_bytes = f.read()
+        # Load image
+        if image_input.startswith(("http://", "https://")):
+            response = requests.get(image_input, timeout=15)
+            response.raise_for_status()
+            img_bytes = response.content
+        elif image_input.startswith("data:image"):
+            # base64 data URI
+            header, encoded = image_input.split(",", 1)
+            img_bytes = base64.b64decode(encoded)
+        else:
+            return {"error": "Unsupported image format. Use URL or data:image/... base64."}
 
-    img = Image.open(BytesIO(img_bytes))
+        img = Image.open(BytesIO(img_bytes))
 
-    model = load_model()
-    results = model.predict(img, conf=0.25, iou=0.45, imgsz=640)
+        # Load model (only once)
+        model_instance = load_model()
 
-    detections = []
-    for res in results:
-        for box in res.boxes:
-            detections.append({
-                "class": res.names[int(box.cls)],
-                "conf": float(box.conf),
-                "bbox": [float(x) for x in box.xyxy[0]]
-            })
+        # Run prediction
+        results = model_instance.predict(
+            img,
+            conf=0.25,
+            iou=0.45,
+            imgsz=640,
+            verbose=False
+        )
 
-    return {"detections": detections, "count": len(detections)}
+        detections = []
+        for result in results:
+            for box in result.boxes:
+                cls_id = int(box.cls)
+                detections.append({
+                    "class": result.names[cls_id],
+                    "confidence": round(float(box.conf), 3),
+                    "bbox": [round(float(x), 1) for x in box.xyxy[0].tolist()]  # x1,y1,x2,y2
+                })
+
+        return {
+            "detections": detections,
+            "count": len(detections),
+            "status": "ok"
+        }
+
+    except Exception as e:
+        return {"error": str(e), "status": "failed"}
 
 if __name__ == "__main__":
     runpod.serverless.start({"handler": handler})
