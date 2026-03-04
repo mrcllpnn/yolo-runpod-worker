@@ -1,16 +1,16 @@
 import os
-# FORCE EVERYTHING TO /tmp (The only place guaranteed to be writable on RunPod)
-os.environ['ULTRALYTICS_CONFIG_DIR'] = '/tmp/ultralytics'
-os.environ['YOLO_CONFIG_DIR'] = '/tmp/ultralytics'
-
-import runpod
 import requests
 import base64
 import cv2
 import numpy as np
+import runpod
 from ultralytics import YOLO
 
-# 1. Download model directly to /tmp/
+# Force YOLO to use a writable directory to avoid "Read-only" crashes
+os.environ['ULTRALYTICS_CONFIG_DIR'] = '/tmp/ultralytics'
+os.environ['YOLO_CONFIG_DIR'] = '/tmp/ultralytics'
+
+# Direct download for the MacPaw model
 MODEL_URL = "https://huggingface.co"
 MODEL_PATH = "/tmp/model.pt"
 
@@ -20,17 +20,17 @@ if not os.path.exists(MODEL_PATH):
     with open(MODEL_PATH, "wb") as f:
         f.write(r.content)
 
-# 2. Load model
+# Load the model
 model = YOLO(MODEL_PATH)
 
 def handler(job):
     try:
-        # Decode Image
+        # Decode Base64 Image
         image_data = base64.b64decode(job["input"]["image"])
         nparr = np.frombuffer(image_data, np.uint8)
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         
-        # Run Inference
+        # Inference (0.1s speed)
         results = model.predict(img, conf=0.25)
         
         detections = []
