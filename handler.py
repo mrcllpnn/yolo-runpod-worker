@@ -7,8 +7,9 @@ import runpod
 from huggingface_hub import hf_hub_download
 from ultralytics import YOLO
 import base64
+import cv2
+import numpy as np
 from io import BytesIO
-from PIL import Image
 
 model = None
 
@@ -30,16 +31,19 @@ def handler(job):
         # Load model (cached after first load)
         model = load_model()
         
-        # Decode Image using PIL (simpler than cv2)
+        # Decode Image using cv2
         image_data = base64.b64decode(job["input"]["image"])
-        img = Image.open(BytesIO(image_data))
+        nparr = np.frombuffer(image_data, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         
-        # Convert to RGB if needed
-        if img.mode != 'RGB':
-            img = img.convert('RGB')
+        if img is None:
+            return {"error": "Failed to decode image", "detections": []}
+        
+        # Convert BGR to RGB (OpenCV uses BGR, YOLO expects RGB)
+        img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         
         # Run Inference
-        results = model.predict(img, conf=0.25)
+        results = model.predict(img_rgb, conf=0.25)
         
         detections = []
         for r in results:
